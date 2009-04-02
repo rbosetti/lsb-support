@@ -1,0 +1,19 @@
+Action StopLinuxService
+
+Property Command shorttext "Command"
+Property DisplayName shorttext "<%AppName%>"
+Property ServiceName shorttext "<%ExecutableName%>"
+
+proc ::InstallJammer::actions::StopLinuxService { obj } {
+	global conf
+	if {!$conf(linux)} { return }
+	$obj properties props -subst 1
+	set cmd "\"/etc/init.d/$props(ServiceName)\" stop"
+	set cmd [::InstallJammer::SubstForPipe $cmd]
+	if {$info(UserIsRoot)} {
+		set cmd [::InstallJammer::SubstForPipe $cmd]
+		debug "Installing service: $cmd"
+		::InstallJammer::ExecAsRoot $cmd -wait Yes
+	}
+	::InstallJammer::UpdateWidgets -updateidletasks 1
+}

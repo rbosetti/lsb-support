@@ -1,0 +1,120 @@
+Action CreateLinuxService "Register Linux initscript"
+
+Property AppArgs shorttext "Application Args" ""
+Property DisplayName shorttext "Long App Name" "<%AppName%>"
+Property ServiceName shorttext "Short App Name" "<%ShortAppName%>"
+Property Executable shorttext "Path to Binary" "<%ProgramExecutable%>"
+Property Script text "Daemon Script" {#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides: @@SHORT_APPNAME@@
+# Required-Start: $local_fs $network
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+### END INIT INFO
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin:/usr/X11R6/bin
+PATH="@@INSTALL_DIR@@/bin:${PATH}"
+. /etc/@@SHORT_APPNAME@@.conf
+. /lib/lsb/init-functions
+
+DEV_APP_NAME="@@SHORT_APPNAME@@"
+NICE_APP_NAME="@@LONG_APPNAME@@"
+PID_DIR="/var/run/@@SHORT_APPNAME@@"
+PID_FILE="${PID_DIR}/@@SHORT_APPNAME@@.pid"
+APP_ARGS="@@RUN_ARGS@@"
+
+unset PYTHONPATH PYTHONHOME
+export PATH
+
+check_daemon_dir() {
+        if [ ! -d "${PID_DIR}" ]; then
+                mkdir -p "${PID_DIR}"
+                chmod 0755 "${PID_DIR}"
+        fi
+}
+
+case "$1" in
+        start)
+                log_daemon_msg "Starting ${NICE_APP_NAME}..."
+                check_daemon_dir
+                log_progress_msg "${DEV_APP_NAME}"; start-stop-daemon -p "${PID_FILE}" -x -S "@@DAEMON_BINARY@@" -- ${APP_ARGS} || log_end_msg 1
+                log_end_msg 0
+                ;;
+        stop)
+                log_daemon_msg "Stopping ${NICE_APP_NAME}..."
+                check_daemon_dir
+                log_progress_msg "${DEV_APP_NAME}"; start-stop-daemon -K -q -o -p "${PID_FILE}" || log_end_msg 1
+                log_end_msg 0
+                ;;
+        reload|force-reload)
+                log_success_msg "$0: $1 unsupported..."
+                ;;
+        restart|force-restart)
+                log_daemon_msg "Restarting ${NICE_APP_NAME}..."
+                check_daemon_dir
+                log_progress_msg "${DEV_APP_NAME}"; start-stop-daemon -K -q -o -p "${PID_FILE}" || log_end_msg 1
+                log_end_msg 0
+                ;;
+        *)
+                log_success_msg "Usage: $0 {start|stop|restart|force-restart}"
+                exit 1
+esac
+
+exit 0
+}
+
+Help Script {The daemon script will be installed into /etc/init.d and registered.
+Also, some text replacement will take place.
+
+@@APP_ARGS@@ -> Arguments
+@@RUN_ARGS@@ -> Arguments
+@@INSTALL_DIR@@ -> <%InstallDir%>
+@@SHORT_APPNAME@@ -> Short App Name
+@@LONG_APPNAME@@ -> Long App Name
+@@DAEMON_BINARY@@ -> Path To Binary
+}
+
+proc ::InstallJammer::actions::CreateLinuxService { obj } {
+	global conf
+	global info
+	if {$conf(windows)} {
+		return
+	}
+
+	$obj properties props -subst 1
+
+	# Do the replacement, mapping strings and then substituting VirtualText
+	set map "\"@@INSTALL_DIR@@\" \"<%InstallDir%>\"
+\"@@APP_ARGS@@\" \"$props(AppArgs)\"
+\"@@RUN_ARGS@@\" \"$props(AppArgs)\"
+\"@@SHORT_APPNAME@@\" \"$props(ServiceName)\"
+\"@@LONG_APPNAME@@\" \"$props(DisplayName)\"
+\"@@DAEMON_BINARY@@\" \"$props(Executable)\""
+	set script [string map $map $props(Script)]
+	set script [::InstallAPI::SubstVirtualText -virtualtext $script]
+	set username [::InstallAPI::SubstVirtualText -virtualtext "<%RealUsername%>"]
+	set filename [::InstallAPI::SubstVirtualText -virtualtext "/etc/init.d/$props(ServiceName)"]
+	debug "Writing script: [set script]"
+
+	# This command sequence is mandated by the LSB
+	if { "$username" eq "root" } {
+		# Write the whole daemon script out to the right place
+		set fp [open "/etc/init.d/$props(ServiceName)" w]
+		fconfigure $fp -translation lf
+		puts -nonewline $fp $script
+		close $fp
+		::InstallJammer::LogFile "/etc/init.d/$props(ServiceName)"
+
+		set cmd "chmod 0740 \"$filename\""
+		set cmd [::InstallJammer::SubstForPipe $cmd]
+		debug "Setting initscript exec flags: $cmd"
+		::InstallJammer::ExecAsRoot $cmd -wait Yes
+
+		set cmd "/usr/lib/lsb/install_initd \"$filename\""
+		set cmd [::InstallJammer::SubstForPipe $cmd]
+		debug "Installing service: $cmd"
+		::InstallJammer::ExecAsRoot $cmd -wait Yes
+	}
+	::InstallJammer::UpdateWidgets -updateidletasks 1
+}

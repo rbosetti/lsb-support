@@ -1,0 +1,58 @@
+Action DetectLSB "Detect Linux Standards Base"
+
+Property Version shorttext "Required Version" "3.1"
+Help Version "The LSB spec revision your app requires"
+
+Property Desktop boolean "Require LSB-Desktop module" "Yes"
+Help Desktop "If Yes, missing lsb-desktop support will set HasLSB to No"
+
+Property Graphics boolean "Require LSB-Graphics module" "Yes"
+Help Graphics "If Yes, missing lsb-graphics support will set HasLSB to No"
+
+proc ::InstallJammer::actions::DetectLSB { obj } {
+	$obj properties props
+	set ver $props(Version)
+
+	set cmdline "/usr/bin/lsb_release -v"
+	set cmd [::InstallJammer::SubstForPipe $cmdline]
+	set args [list -subst 0 -language "None"]
+	::InstallAPI::SetVirtualText  -virtualtext "HasLSB" -value "No"
+	::InstallAPI::SetVirtualText  -virtualtext "HasLSBDesktop" -value "No"
+	::InstallAPI::SetVirtualText  -virtualtext "HasLSBGraphics" -value "No"
+
+	if {[catch { eval exec $cmd } result]} {
+		puts "Error while executing: $result"
+		 ::InstallAPI::SetVirtualText  -virtualtext "HasLSB" -value "Invalid"
+	} else {
+		if {[string match "*core-$ver*" $result]} {
+			::InstallAPI::SetVirtualText  -virtualtext "HasLSB" -value "Yes"
+		}
+		# If either Desktop or Graphics is missing, and is required
+		# we set HasLSB to "No". Just a safety measure for naive installers
+		if {[string match "*desktop-$ver*" $result]} {
+			 ::InstallAPI::SetVirtualText  -virtualtext "HasLSBDesktop" -value "Yes"
+		} else {
+			if {[string equal "_$props(Desktop)" "_Yes"]} {
+				::InstallAPI::SetVirtualText  -virtualtext "HasLSB" -value "No"
+			}
+		}
+		if {[string match "*graphics-$ver*" $result]} {
+			::InstallAPI::SetVirtualText  -virtualtext "HasLSBGraphics" -value "Yes"
+		} else {
+			if {[string equal "_$props(Graphics)" "_Yes"]} {
+				::InstallAPI::SetVirtualText  -virtualtext "HasLSB" -value "No"
+			}
+		}
+
+	}
+
+	### We additionally detect where config files should be placed.
+	set user [::InstallAPI::SubstVirtualText -virtualtext "<%Username%>"]
+	if {$user eq "root"} {
+		::InstallAPI::SetVirtualText  -virtualtext "ConfDir" -value "/etc/yourappname"
+	} else {
+		::InstallAPI::SetVirtualText  -virtualtext "ConfDir" -value "<%Env HOME%>/.yourappname/"
+	}
+
+	::InstallJammer::UpdateWidgets -updateidletasks -1
+}

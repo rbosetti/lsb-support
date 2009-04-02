@@ -1,0 +1,45 @@
+Action CopyRecursive
+
+Property Source installedfile "Source"
+Help FileName "The name of the source directory on the target system"
+
+Property Destination installedfile "Destination"
+Help FileName "The name of the destination directory on the target system"
+
+proc ::InstallJammer::actions::CopyRecursive { obj } {
+    $obj properties props -subst 1
+
+    set initial_dst [::InstallJammer::RelativeFile $props(Destination)]
+    set initial_src [::InstallJammer::RelativeFile $props(Source)]
+
+	proc xcopyfile {src dst} {
+		if {[catch {file copy -force "$src" "$dst"} err]} {
+			debug "Error: $err"
+			debug "Cannot copy file $src to $dst"
+		}
+		return
+	}
+
+	proc xcopy {src dst} {
+		file mkdir "$dst"
+
+		if {[catch {glob [file join "$src" *]} file_list]} {
+			return
+		}
+		foreach file file_list {
+			set base [file tail "$file"]
+			set sub  [file join $dst $base]
+
+			if {[string equal CVS $base]} {continue}
+			if {[string equal .svn $base]} {continue}
+
+			if {[file isdirectory $file]} then {
+				file mkdir "$sub"
+				xcopy "$file" "$sub"
+			} else {
+				xcopyfile "$file" "$sub"
+			}
+		}
+	}
+	xcopy "$initial_src" "$initial_dst"
+}
